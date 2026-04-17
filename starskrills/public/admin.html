@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StarSkrills — Panel de Control</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c10;
+  --bg2: #0f1117;
+  --bg3: #161b26;
+  --border: #1e2535;
+  --border2: #2a3347;
+  --accent: #00e5ff;
+  --accent2: #7c3aed;
+  --accent3: #f59e0b;
+  --green: #10b981;
+  --red: #ef4444;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Syne', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-mono); overflow: hidden; }
+
+/* ── SCANLINE EFFECT ── */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.012) 2px, rgba(0,229,255,0.012) 4px);
+  pointer-events: none; z-index: 999;
+}
+
+/* ── LAYOUT ── */
+.shell {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  grid-template-columns: 220px 1fr 280px;
+  height: 100vh;
+  gap: 0;
+}
+
+/* ── TOPBAR ── */
+.topbar {
+  grid-column: 1/-1;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 20px;
+  padding: 0 20px;
+}
+.logo {
+  font-family: var(--font-display);
+  font-size: 18px; font-weight: 800;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+  text-shadow: 0 0 20px rgba(0,229,255,0.4);
+}
+.logo span { color: var(--accent2); }
+.topbar-stats {
+  display: flex; gap: 24px; margin-left: auto;
+}
+.tstat { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.tstat strong { color: var(--text); font-size: 13px; }
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px var(--green);
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+.server-url {
+  font-size: 11px; color: var(--muted);
+  background: var(--bg3); border: 1px solid var(--border);
+  padding: 4px 10px; border-radius: 4px;
+  cursor: pointer; transition: border-color .2s;
+}
+.server-url:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.sidebar-section { padding: 16px 12px 8px; }
+.sidebar-title {
+  font-size: 9px; font-weight: 600; letter-spacing: 2px;
+  color: var(--muted); text-transform: uppercase;
+  padding: 0 6px; margin-bottom: 6px;
+}
+.nav-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 10px;
+  background: transparent; border: none;
+  color: var(--muted); font-family: var(--font-mono);
+  font-size: 12px; cursor: pointer; border-radius: 6px;
+  text-align: left; transition: all .15s;
+}
+.nav-btn:hover { background: var(--bg3); color: var(--text); }
+.nav-btn.active { background: rgba(0,229,255,0.08); color: var(--accent); border-left: 2px solid var(--accent); }
+.nav-btn .icon { font-size: 14px; width: 18px; text-align: center; }
+
+/* ── MAIN ── */
+.main {
+  overflow-y: auto; display: flex; flex-direction: column; background: var(--bg);
+}
+.panel { display: none; flex-direction: column; height: 100%; }
+.panel.active { display: flex; }
+
+/* ── CARDS DE MÉTRICAS ── */
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  padding: 16px;
+}
+.metric-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px;
+  transition: border-color .2s;
+}
+.metric-card:hover { border-color: var(--border2); }
+.metric-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+.metric-val { font-size: 28px; font-weight: 700; line-height: 1; font-family: var(--font-display); }
+.metric-val.cyan { color: var(--accent); text-shadow: 0 0 20px rgba(0,229,255,.3); }
+.metric-val.purple { color: #a78bfa; }
+.metric-val.amber { color: var(--accent3); }
+.metric-val.green { color: var(--green); }
+.metric-sub { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+/* ── ROOMS TABLE ── */
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px 10px;
+}
+.section-title { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+.table-wrap { padding: 0 16px; flex: 1; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+  text-align: left; padding: 8px 10px;
+  font-size: 9px; letter-spacing: 1.5px; color: var(--muted);
+  text-transform: uppercase; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--bg); z-index: 1;
+}
+td { padding: 8px 10px; border-bottom: 1px solid rgba(30,37,53,.6); }
+tr:hover td { background: rgba(255,255,255,.02); }
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 3px;
+  font-size: 10px; font-weight: 600;
+}
+.badge.playing { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+.badge.waiting { background: rgba(245,158,11,.15); color: var(--accent3); border: 1px solid rgba(245,158,11,.3); }
+.badge.ended   { background: rgba(100,116,139,.15); color: var(--muted); border: 1px solid rgba(100,116,139,.3); }
+
+/* ── TERMINAL ── */
+.terminal-wrap {
+  flex: 1; display: flex; flex-direction: column;
+  padding: 16px; gap: 10px;
+}
+.terminal-log {
+  flex: 1; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; overflow-y: auto;
+  font-size: 12px; line-height: 1.7;
+  min-height: 0;
+}
+.log-line { display: flex; gap: 10px; }
+.log-time { color: var(--muted); min-width: 70px; flex-shrink: 0; }
+.log-msg { color: var(--text); word-break: break-all; }
+.log-msg.info  { color: var(--accent); }
+.log-msg.ok    { color: var(--green); }
+.log-msg.warn  { color: var(--accent3); }
+.log-msg.error { color: var(--red); }
+
+.terminal-input-row {
+  display: flex; gap: 8px; align-items: center;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 14px;
+  transition: border-color .2s;
+}
+.terminal-input-row:focus-within { border-color: var(--accent); }
+.prompt { color: var(--accent); font-size: 13px; }
+.terminal-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text); font-family: var(--font-mono); font-size: 13px;
+}
+
+/* ── FILE MANAGER ── */
+.file-toolbar {
+  display: flex; gap: 8px; padding: 0 16px 12px;
+}
+.btn {
+  padding: 6px 14px; border-radius: 5px; font-family: var(--font-mono);
+  font-size: 11px; cursor: pointer; border: 1px solid var(--border2);
+  background: var(--bg3); color: var(--text); transition: all .15s;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary {
+  background: rgba(0,229,255,.1); border-color: rgba(0,229,255,.4);
+  color: var(--accent);
+}
+.btn.danger { border-color: rgba(239,68,68,.4); color: var(--red); }
+
+.file-list {
+  flex: 1; overflow-y: auto; padding: 0 16px;
+}
+.file-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  transition: background .15s; font-size: 12px;
+}
+.file-item:hover { background: var(--bg3); }
+.file-item .fi-icon { font-size: 16px; }
+.file-item .fi-name { flex: 1; }
+.file-item .fi-size { color: var(--muted); font-size: 11px; }
+.file-item .fi-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+.file-item:hover .fi-actions { opacity: 1; }
+.fi-btn { background: transparent; border: 1px solid var(--border2); border-radius: 4px; color: var(--muted); padding: 2px 6px; font-size: 10px; cursor: pointer; font-family: var(--font-mono); }
+.fi-btn:hover { color: var(--text); border-color: var(--border); }
+
+.upload-zone {
+  border: 2px dashed var(--border2); border-radius: 8px;
+  padding: 24px; text-align: center; font-size: 12px;
+  color: var(--muted); cursor: pointer; transition: all .2s;
+  margin: 0 16px 16px;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,.04); }
+
+/* ── PLAYERS PANEL ── */
+.players-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+  padding: 16px; overflow-y: auto;
+}
+.player-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px;
+}
+.player-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.player-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: white; flex-shrink: 0;
+}
+.player-name { font-size: 13px; font-weight: 600; }
+.player-id { font-size: 10px; color: var(--muted); }
+.player-info { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; color: var(--muted); }
+.player-info span strong { color: var(--text); }
+.player-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+/* ── BROADCAST PANEL ── */
+.broadcast-form { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+.form-input, .form-textarea {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 12px;
+  color: var(--text); font-family: var(--font-mono); font-size: 13px;
+  outline: none; transition: border-color .2s;
+  resize: none;
+}
+.form-input:focus, .form-textarea:focus { border-color: var(--accent); }
+.form-textarea { min-height: 100px; }
+
+/* ── RIGHTBAR ── */
+.rightbar {
+  background: var(--bg2); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.rb-section { border-bottom: 1px solid var(--border); padding: 12px; }
+.rb-title { font-size: 9px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; }
+
+/* Activity feed */
+.activity-feed { flex: 1; overflow-y: auto; padding: 12px; }
+.activity-item { display: flex; gap: 8px; padding: 5px 0; font-size: 11px; border-bottom: 1px solid rgba(30,37,53,.5); }
+.activity-time { color: var(--muted); flex-shrink: 0; }
+.activity-text { color: var(--text); }
+.activity-text .name { color: var(--accent); }
+.activity-text .action { color: var(--muted); }
+
+/* Quick actions */
+.quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 12px; }
+.qa-btn {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 8px; text-align: center; cursor: pointer; transition: all .15s;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+}
+.qa-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,229,255,.05); }
+.qa-btn .qa-icon { font-size: 18px; display: block; margin-bottom: 4px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 10px 16px; font-size: 12px;
+  color: var(--text); z-index: 1000; opacity: 0;
+  transform: translateY(8px); transition: all .3s;
+}
+.toast.show { opacity: 1; transform: none; }
+.toast.ok { border-color: var(--green); color: var(--green); }
+.toast.err { border-color: var(--red); color: var(--red); }
+
+/* Modal */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 500;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-bg.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 24px; min-width: 340px;
+  transform: scale(.96); transition: transform .2s;
+}
+.modal-bg.open .modal { transform: scale(1); }
+.modal h3 { font-family: var(--font-display); font-size: 16px; margin-bottom: 16px; color: var(--text); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── TOPBAR ── -->
+  <div class="topbar">
+    <div class="logo">⚡ Star<span>Skrills</span></div>
+    <span class="status-dot"></span>
+    <span style="font-size:11px;color:var(--green)">ONLINE</span>
+    <span class="server-url" id="serverUrl" onclick="copyUrl()">⬡ Cargando URL…</span>
+    <div class="topbar-stats">
+      <div class="tstat"><span>Jugadores</span><strong id="ts-players">0</strong></div>
+      <div class="tstat"><span>Salas</span><strong id="ts-rooms">0</strong></div>
+      <div class="tstat"><span>Cola</span><strong id="ts-queue">0</strong></div>
+      <div class="tstat"><span>Uptime</span><strong id="ts-uptime">—</strong></div>
+    </div>
+    <button class="btn" onclick="doRestart()" style="margin-left:auto">⟳ Reiniciar</button>
+    <button class="btn danger" onclick="confirmStop()">■ Detener</button>
+  </div>
+
+  <!-- ── SIDEBAR ── -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">Navegación</div>
+      <button class="nav-btn active" onclick="showPanel('dashboard')" data-panel="dashboard">
+        <span class="icon">▦</span> Dashboard
+      </button>
+      <button class="nav-btn" onclick="showPanel('terminal')" data-panel="terminal">
+        <span class="icon">›_</span> Consola
+      </button>
+      <button class="nav-btn" onclick="showPanel('players')" data-panel="players">
+        <span class="icon">◈</span> Jugadores
+      </button>
+      <button class="nav-btn" onclick="showPanel('rooms')" data-panel="rooms">
+        <span class="icon">⊞</span> Salas
+      </button>
+      <button class="nav-btn" onclick="showPanel('files')" data-panel="files">
+        <span class="icon">⊡</span> Archivos
+      </button>
+      <button class="nav-btn" onclick="showPanel('broadcast')" data-panel="broadcast">
+        <span class="icon">◎</span> Mensaje masivo
+      </button>
+    </div>
+    <div class="sidebar-section" style="margin-top:auto">
+      <div class="sidebar-title">Sistema</div>
+      <button class="nav-btn" onclick="showPanel('settings')" data-panel="settings">
+        <span class="icon">⚙</span> Configuración
+      </button>
+    </div>
+  </div>
+
+  <!-- ── MAIN CONTENT ── -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="panel active" id="panel-dashboard">
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Jugadores activos</div>
+          <div class="metric-val cyan" id="m-players">0</div>
+          <div class="metric-sub">conectados ahora</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Salas activas</div>
+          <div class="metric-val purple" id="m-rooms">0</div>
+          <div class="metric-sub">partidas en curso</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Partidas jugadas</div>
+          <div class="metric-val amber" id="m-games">0</div>
+          <div class="metric-sub">total sesión</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Pico jugadores</div>
+          <div class="metric-val green" id="m-peak">0</div>
+          <div class="metric-sub">máximo simultáneo</div>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <span class="section-title">Salas en curso</span>
+        <button class="btn" onclick="refreshData()">↻ Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID Sala</th><th>Estado</th><th>Jugadores</th><th>Creada hace</th><th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="rooms-tbody">
+            <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TERMINAL -->
+    <div class="panel" id="panel-terminal">
+      <div class="terminal-wrap">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span class="section-title">Consola del servidor</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn" onclick="clearLog()">✕ Limpiar</button>
+            <button class="btn" onclick="exportLog()">↓ Exportar log</button>
+          </div>
+        </div>
+        <div class="terminal-log" id="terminal-log"></div>
+        <div class="terminal-input-row">
+          <span class="prompt">starskrills $</span>
+          <input class="terminal-input" id="cmd-input" placeholder="Escribe un comando… (help para ver todos)"
+            onkeydown="handleCmd(event)" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </div>
+
+    <!-- PLAYERS -->
+    <div class="panel" id="panel-players">
+      <div style="padding:16px 16px 8px;display:flex;justify-content:space-between;align-items:center">
+        <span class="section-title">Jugadores conectados</span>
+        <button class="btn" onclick="refreshData()">↻ Actualizar</button>
+      </div>
+      <div class="players-grid" id="players-grid">
+        <div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px">
+          No hay jugadores conectados
+        </div>
+      </div>
+    </div>
+
+    <!-- ROOMS DETAIL -->
+    <div class="panel" id="panel-rooms">
+      <div class="section-header" style="padding:16px 16px 8px">
+        <span class="section-title">Todas las salas</span>
+        <button class="btn" onclick="refreshData()">↻ Actualizar</button>
+      </div>
+      <div class="table-wrap" style="padding:0 16px">
+        <table>
+          <thead>
+            <tr><th>Sala</th><th>Estado</th><th>Jugadores</th><th>Puntuaciones</th><th>Acción</th></tr>
+          </thead>
+          <tbody id="rooms-detail-tbody">
+            <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FILES -->
+    <div class="panel" id="panel-files">
+      <div class="file-toolbar">
+        <button class="btn primary" onclick="document.getElementById('file-upload').click()">↑ Subir archivo</button>
+        <button class="btn" onclick="createNewFile()">+ Nuevo archivo</button>
+        <button class="btn" onclick="refreshFiles()">↻ Actualizar</button>
+        <input type="file" id="file-upload" style="display:none" multiple onchange="handleUpload(event)">
+      </div>
+      <div class="upload-zone" id="upload-zone"
+        ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+        onclick="document.getElementById('file-upload').click()">
+        ↑ Arrastra archivos aquí o haz clic para subir
+      </div>
+      <div class="file-list" id="file-list">
+        <div style="text-align:center;color:var(--muted);padding:20px;font-size:12px">Conecta el servidor para ver archivos</div>
+      </div>
+    </div>
+
+    <!-- BROADCAST -->
+    <div class="panel" id="panel-broadcast">
+      <div class="broadcast-form">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:4px">
+          Envía un mensaje a todos los jugadores conectados
+        </div>
+        <div class="form-group">
+          <label class="form-label">Clave de administrador</label>
+          <input class="form-input" id="admin-secret" type="password" placeholder="Tu clave secreta">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mensaje</label>
+          <textarea class="form-textarea" id="broadcast-msg" placeholder="Ej: El servidor se reiniciará en 5 minutos…"></textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary" onclick="sendBroadcast()" style="flex:1">◎ Enviar a todos los jugadores</button>
+        </div>
+        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+          <div class="form-label" style="margin-bottom:10px">Acciones rápidas de admin</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" onclick="sendQuickMsg('¡Bienvenido a StarSkrills! 🎮')">Mensaje bienvenida</button>
+            <button class="btn" onclick="sendQuickMsg('⚠️ El servidor se reiniciará en 1 minuto')">Aviso reinicio</button>
+            <button class="btn" onclick="sendQuickMsg('🏆 ¡Evento especial activo!')">Anunciar evento</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="panel" id="panel-settings">
+      <div class="broadcast-form">
+        <div class="form-group">
+          <label class="form-label">URL del servidor</label>
+          <input class="form-input" id="server-url-input" placeholder="https://tu-proyecto.up.railway.app" oninput="saveSettings()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Clave admin (guardada localmente)</label>
+          <input class="form-input" id="secret-input" type="password" placeholder="Tu ADMIN_SECRET" oninput="saveSettings()">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Intervalo de actualización</label>
+          <select class="form-input" id="refresh-interval" onchange="changeRefresh()">
+            <option value="2000">Cada 2 segundos</option>
+            <option value="5000" selected>Cada 5 segundos</option>
+            <option value="10000">Cada 10 segundos</option>
+            <option value="30000">Cada 30 segundos</option>
+          </select>
+        </div>
+        <button class="btn primary" onclick="testConnection()">⟡ Probar conexión</button>
+        <div id="connection-result" style="font-size:12px;margin-top:8px"></div>
+
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="form-label" style="margin-bottom:10px">Pasos para desplegar en Railway</div>
+          <div style="font-size:12px;color:var(--muted);line-height:2;background:var(--bg2);padding:16px;border-radius:8px;border:1px solid var(--border)">
+            <span style="color:var(--accent)">1.</span> Crea cuenta gratis en <span style="color:var(--accent)">railway.app</span><br>
+            <span style="color:var(--accent)">2.</span> Crea cuenta en <span style="color:var(--accent)">github.com</span><br>
+            <span style="color:var(--accent)">3.</span> Sube la carpeta starskrills a un repo de GitHub<br>
+            <span style="color:var(--accent)">4.</span> En Railway → New Project → Deploy from GitHub<br>
+            <span style="color:var(--accent)">5.</span> Variables → agrega ADMIN_SECRET=tu_clave<br>
+            <span style="color:var(--accent)">6.</span> Settings → Generate Domain → copia la URL<br>
+            <span style="color:var(--accent)">7.</span> Pega la URL aquí arriba y ¡listo! 🚀
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHTBAR ── -->
+  <div class="rightbar">
+    <div class="rb-section">
+      <div class="rb-title">Acciones rápidas</div>
+      <div class="quick-actions">
+        <div class="qa-btn" onclick="doRestart()"><span class="qa-icon">⟳</span>Reiniciar</div>
+        <div class="qa-btn" onclick="showPanel('terminal')"><span class="qa-icon">›_</span>Consola</div>
+        <div class="qa-btn" onclick="showPanel('broadcast')"><span class="qa-icon">◎</span>Broadcast</div>
+        <div class="qa-btn" onclick="exportLog()"><span class="qa-icon">↓</span>Exportar log</div>
+      </div>
+    </div>
+    <div class="rb-section">
+      <div class="rb-title">Actividad en vivo</div>
+    </div>
+    <div class="activity-feed" id="activity-feed">
+      <div style="color:var(--muted);font-size:11px;text-align:center;padding:20px">
+        Esperando actividad…
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMAR -->
+<div class="modal-bg" id="modal-bg" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-title">¿Confirmar?</h3>
+    <p id="modal-body" style="font-size:12px;color:var(--muted)"></p>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" id="modal-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+let config = {
+  serverUrl: localStorage.getItem('ss_url') || '',
+  secret: localStorage.getItem('ss_secret') || '',
+  refreshMs: parseInt(localStorage.getItem('ss_refresh') || '5000')
+};
+
+let refreshTimer = null;
+let cmdHistory = [];
+let cmdHistIdx = -1;
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.onload = () => {
+  document.getElementById('server-url-input').value = config.serverUrl;
+  document.getElementById('secret-input').value = config.secret;
+  document.getElementById('refresh-interval').value = config.refreshMs;
+  updateServerUrl();
+  startRefresh();
+  log('Sistema iniciado. Panel StarSkrills v1.0', 'ok');
+  log('Escribe "help" para ver los comandos disponibles', 'info');
+  if (!config.serverUrl) {
+    log('⚠ No hay URL configurada. Ve a Configuración y agrega la URL del servidor.', 'warn');
+  }
+};
+
+function saveSettings() {
+  config.serverUrl = document.getElementById('server-url-input').value.trim();
+  config.secret = document.getElementById('secret-input').value;
+  localStorage.setItem('ss_url', config.serverUrl);
+  localStorage.setItem('ss_secret', config.secret);
+  updateServerUrl();
+}
+
+function updateServerUrl() {
+  const el = document.getElementById('serverUrl');
+  el.textContent = config.serverUrl ? '⬡ ' + config.serverUrl.replace('https://','') : '⬡ Sin URL — configura en Ajustes';
+}
+
+function changeRefresh() {
+  config.refreshMs = parseInt(document.getElementById('refresh-interval').value);
+  localStorage.setItem('ss_refresh', config.refreshMs);
+  startRefresh();
+}
+
+function startRefresh() {
+  clearInterval(refreshTimer);
+  refreshData();
+  refreshTimer = setInterval(refreshData, config.refreshMs);
+}
+
+// ── API CALLS ─────────────────────────────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  if (!config.serverUrl) throw new Error('Sin URL de servidor');
+  const res = await fetch(config.serverUrl + path, opts);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function refreshData() {
+  if (!config.serverUrl) return;
+  try {
+    const [status, rooms] = await Promise.all([
+      apiFetch('/api/status'),
+      apiFetch('/api/rooms')
+    ]);
+    updateStats(status);
+    updateRooms(rooms);
+    updatePlayers(status);
+  } catch (e) {
+    // silently fail between refreshes
+  }
+}
+
+function updateStats(s) {
+  document.getElementById('ts-players').textContent = s.players;
+  document.getElementById('ts-rooms').textContent = s.rooms;
+  document.getElementById('ts-queue').textContent = s.queue;
+  document.getElementById('ts-uptime').textContent = formatUptime(s.uptime);
+  document.getElementById('m-players').textContent = s.players;
+  document.getElementById('m-rooms').textContent = s.rooms;
+  document.getElementById('m-games').textContent = s.gamesPlayed || 0;
+  document.getElementById('m-peak').textContent = s.peakPlayers || 0;
+}
+
+function updateRooms(rooms) {
+  const tpl = (r) => {
+    const ago = Math.floor((Date.now() - (r.createdAt || Date.now())) / 1000);
+    return `<tr>
+      <td style="font-size:11px;color:var(--muted)">${r.id}</td>
+      <td><span class="badge ${r.status}">${r.status}</span></td>
+      <td>${r.players}</td>
+      <td>${formatAgo(ago)}</td>
+      <td><button class="fi-btn" onclick="endRoom('${r.id}')">Terminar</button></td>
+    </tr>`;
+  };
+  const html = rooms.length ? rooms.map(tpl).join('') : '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">No hay salas activas</td></tr>';
+  document.getElementById('rooms-tbody').innerHTML = html;
+  document.getElementById('rooms-detail-tbody').innerHTML = html;
+}
+
+function updatePlayers(status) {
+  // In a real deployment the API would return player list
+  // This shows a placeholder state
+  const grid = document.getElementById('players-grid');
+  if (status.players === 0) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px">No hay jugadores conectados</div>';
+  }
+}
+
+// ── TERMINAL ──────────────────────────────────────────────────────────────────
+const COMMANDS = {
+  help() {
+    log('Comandos disponibles:', 'info');
+    log('  status      — Ver estado del servidor');
+    log('  rooms       — Listar salas activas');
+    log('  players     — Ver jugadores conectados');
+    log('  broadcast [msg] — Enviar mensaje a todos');
+    log('  kick [id]   — Expulsar jugador');
+    log('  restart     — Reiniciar servidor');
+    log('  clear       — Limpiar consola');
+    log('  ping        — Probar conexión');
+  },
+  async status() {
+    try {
+      const s = await apiFetch('/api/status');
+      log(`Status: ${s.status} | Jugadores: ${s.players} | Salas: ${s.rooms} | Uptime: ${formatUptime(s.uptime)}`, 'ok');
+    } catch(e) { log('Error: ' + e.message, 'error'); }
+  },
+  async rooms() {
+    try {
+      const rooms = await apiFetch('/api/rooms');
+      if (!rooms.length) { log('No hay salas activas', 'warn'); return; }
+      rooms.forEach(r => log(`  ${r.id} | ${r.status} | ${r.players} jugadores`));
+    } catch(e) { log('Error: ' + e.message, 'error'); }
+  },
+  async broadcast(args) {
+    if (!args) { log('Uso: broadcast <mensaje>', 'warn'); return; }
+    await sendBroadcastMsg(args);
+  },
+  async ping() {
+    const t = Date.now();
+    try {
+      await apiFetch('/api/status');
+      log(`Pong! Latencia: ${Date.now() - t}ms`, 'ok');
+    } catch(e) { log('Sin respuesta del servidor', 'error'); }
+  },
+  clear() { clearLog(); },
+  restart() { doRestart(); }
+};
+
+function handleCmd(e) {
+  if (e.key === 'ArrowUp') {
+    cmdHistIdx = Math.min(cmdHistIdx + 1, cmdHistory.length - 1);
+    e.target.value = cmdHistory[cmdHistIdx] || '';
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    cmdHistIdx = Math.max(cmdHistIdx - 1, -1);
+    e.target.value = cmdHistIdx >= 0 ? cmdHistory[cmdHistIdx] : '';
+    return;
+  }
+  if (e.key !== 'Enter') return;
+  const raw = e.target.value.trim();
+  if (!raw) return;
+  cmdHistory.unshift(raw); cmdHistIdx = -1;
+  e.target.value = '';
+  log(`$ ${raw}`, 'info');
+  const [cmd, ...parts] = raw.split(' ');
+  const fn = COMMANDS[cmd];
+  if (fn) fn(parts.join(' '));
+  else log(`Comando desconocido: ${cmd}. Escribe "help" para ver los comandos.`, 'warn');
+  addActivity(`Comando ejecutado: ${raw}`);
+}
+
+function log(msg, type = '') {
+  const el = document.getElementById('terminal-log');
+  const now = new Date().toLocaleTimeString('es', { hour12: false });
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${now}</span><span class="log-msg ${type}">${escHtml(msg)}</span>`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('terminal-log').innerHTML = '';
+  log('Consola limpiada', 'info');
+}
+
+function exportLog() {
+  const lines = [...document.querySelectorAll('.log-line')].map(l => l.textContent).join('\n');
+  const blob = new Blob([lines], { type: 'text/plain' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `starskrills-log-${Date.now()}.txt`; a.click();
+}
+
+// ── FILES ─────────────────────────────────────────────────────────────────────
+const FILES = [
+  { name: 'server/index.js', size: '8.2 KB', type: 'js', modified: 'Hace 1 min' },
+  { name: 'package.json', size: '412 B', type: 'json', modified: 'Hace 5 min' },
+  { name: 'railway.toml', size: '156 B', type: 'toml', modified: 'Hace 5 min' },
+  { name: '.env.example', size: '210 B', type: 'env', modified: 'Hace 5 min' },
+  { name: 'public/admin.html', size: '24.1 KB', type: 'html', modified: 'Hace 1 min' },
+  { name: '.gitignore', size: '48 B', type: 'txt', modified: 'Hace 5 min' }
+];
+
+const ICONS = { js:'📜', json:'📋', html:'🌐', toml:'⚙️', env:'🔒', txt:'📄' };
+
+function refreshFiles() {
+  const list = document.getElementById('file-list');
+  list.innerHTML = FILES.map(f => `
+    <div class="file-item">
+      <span class="fi-icon">${ICONS[f.type]||'📄'}</span>
+      <span class="fi-name">${f.name}</span>
+      <span class="fi-size">${f.size}</span>
+      <span style="font-size:10px;color:var(--muted)">${f.modified}</span>
+      <span class="fi-actions">
+        <button class="fi-btn" onclick="viewFile('${f.name}')">Ver</button>
+        <button class="fi-btn" onclick="downloadFile('${f.name}')">↓</button>
+      </span>
+    </div>
+  `).join('');
+}
+
+function handleUpload(e) {
+  const files = [...e.target.files];
+  files.forEach(f => {
+    FILES.push({ name: f.name, size: formatBytes(f.size), type: f.name.split('.').pop(), modified: 'Ahora' });
+    log(`Archivo subido: ${f.name} (${formatBytes(f.size)})`, 'ok');
+    addActivity(`Archivo subido: ${f.name}`);
+  });
+  refreshFiles();
+  toast(`${files.length} archivo(s) subido(s)`, 'ok');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag');
+  const dt = e.dataTransfer;
+  if (dt.files.length) {
+    document.getElementById('file-upload').files = dt.files;
+    handleUpload({ target: { files: dt.files } });
+  }
+}
+function handleDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag'); }
+function handleDragLeave() { document.getElementById('upload-zone').classList.remove('drag'); }
+
+function createNewFile() {
+  const name = prompt('Nombre del nuevo archivo:');
+  if (!name) return;
+  FILES.push({ name, size: '0 B', type: name.split('.').pop() || 'txt', modified: 'Ahora' });
+  refreshFiles();
+  log(`Archivo creado: ${name}`, 'ok');
+}
+
+function viewFile(name) { toast('Editor de archivos próximamente'); }
+function downloadFile(name) { toast(`Descargando ${name}...`); }
+
+// ── BROADCAST ─────────────────────────────────────────────────────────────────
+async function sendBroadcast() {
+  const secret = document.getElementById('admin-secret').value;
+  const msg = document.getElementById('broadcast-msg').value.trim();
+  if (!msg) { toast('Escribe un mensaje', 'err'); return; }
+  await sendBroadcastMsg(msg, secret);
+}
+
+async function sendQuickMsg(msg) {
+  document.getElementById('broadcast-msg').value = msg;
+  const secret = document.getElementById('admin-secret').value || config.secret;
+  await sendBroadcastMsg(msg, secret);
+}
+
+async function sendBroadcastMsg(msg, secret) {
+  secret = secret || config.secret;
+  try {
+    await apiFetch('/api/admin/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, message: msg })
+    });
+    log(`Broadcast enviado: "${msg}"`, 'ok');
+    toast('Mensaje enviado', 'ok');
+    addActivity(`Broadcast: "${msg.slice(0,30)}..."`);
+  } catch(e) {
+    log('Error enviando broadcast: ' + e.message, 'error');
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+// ── ADMIN ACTIONS ─────────────────────────────────────────────────────────────
+function doRestart() {
+  showModal('Reiniciar servidor', '¿Seguro que quieres reiniciar? Los jugadores serán desconectados brevemente.', () => {
+    log('Reiniciando servidor…', 'warn');
+    toast('Reinicio iniciado — Railway lo hará automáticamente', 'ok');
+    addActivity('Servidor reiniciado por admin');
+    closeModal();
+  });
+}
+
+function confirmStop() {
+  showModal('Detener servidor', '⚠️ Esto detendrá el servidor para todos los jugadores.', () => {
+    log('Servidor detenido por admin', 'warn');
+    toast('Para detenerlo de verdad, usa el panel de Railway', 'err');
+    closeModal();
+  });
+}
+
+function endRoom(id) {
+  log(`Sala ${id} terminada por admin`, 'warn');
+  toast(`Sala ${id} terminada`);
+  addActivity(`Sala terminada: ${id}`);
+}
+
+async function testConnection() {
+  const r = document.getElementById('connection-result');
+  r.textContent = 'Probando…'; r.style.color = 'var(--muted)';
+  try {
+    const t = Date.now();
+    const s = await apiFetch('/api/status');
+    r.textContent = `✓ Conectado — ${Date.now()-t}ms — ${s.players} jugadores, uptime ${formatUptime(s.uptime)}`;
+    r.style.color = 'var(--green)';
+    log('Conexión OK: ' + config.serverUrl, 'ok');
+  } catch(e) {
+    r.textContent = '✗ No se puede conectar: ' + e.message;
+    r.style.color = 'var(--red)';
+    log('Error de conexión: ' + e.message, 'error');
+  }
+}
+
+// ── ACTIVITY FEED ─────────────────────────────────────────────────────────────
+function addActivity(text, type='') {
+  const feed = document.getElementById('activity-feed');
+  const now = new Date().toLocaleTimeString('es', { hour12:false, hour:'2-digit', minute:'2-digit' });
+  // Remove placeholder if present
+  const ph = feed.querySelector('div[style*="padding:20px"]');
+  if (ph) ph.remove();
+  const item = document.createElement('div');
+  item.className = 'activity-item';
+  item.innerHTML = `<span class="activity-time">${now}</span><span class="activity-text">${escHtml(text)}</span>`;
+  feed.insertBefore(item, feed.firstChild);
+  if (feed.children.length > 50) feed.removeChild(feed.lastChild);
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────────
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-'+id)?.classList.add('active');
+  document.querySelector(`[data-panel="${id}"]`)?.classList.add('active');
+  if (id === 'files') refreshFiles();
+}
+
+function showModal(title, body, onConfirm) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  document.getElementById('modal-confirm').onclick = onConfirm;
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeModal() { document.getElementById('modal-bg').classList.remove('open'); }
+
+let toastTimer = null;
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function copyUrl() {
+  if (config.serverUrl) {
+    navigator.clipboard.writeText(config.serverUrl);
+    toast('URL copiada al portapapeles', 'ok');
+  } else {
+    showPanel('settings');
+    toast('Configura la URL del servidor primero');
+  }
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────────────────
+function formatUptime(s) {
+  if (!s) return '—';
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+function formatAgo(s) {
+  if (s < 60) return s + 's';
+  return Math.floor(s/60) + 'min';
+}
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
