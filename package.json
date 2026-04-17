@@ -1,13 +1,16 @@
 {
-  "name": "brawl-stars-server",
-  "version": "1.0.0",
-  "description": "Servidor multiplayer Brawl Stars",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
-  }
+    "name": "starskrills",
+    "version": "1.0.0",
+    "description": "Brawl Clone 3D Multiplayer",
+    "main": "index.js",
+    "scripts": {
+          "start": "node index.js"
+    },
+    "dependencies": {
+          "express": "^4.18.2",
+          "http": "^0.0.1-security",
+          "socket.io": "^4.7.2",
+          "cors": "^2.8.5",
+          "path": "^0.12.7"
+    }
 }
