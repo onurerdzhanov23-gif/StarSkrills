@@ -8,8 +8,24 @@ const path = require('path');
 const app = express();
 app.use(cors());
 
-// Servir archivos estáticos desde la raíz del proyecto
-app.use(express.static(__dirname));
+// Disable cache
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Expires', '0');
+  next();
+});
+
+// Serve static files properly without blocking the rest of the application
+app.use(express.static(__dirname, {
+  maxAge: 0,
+  etag: false,
+  fallthrough: true
+}));
+
+// Route for the main game
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
