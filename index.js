@@ -189,10 +189,13 @@ server.listen(PORT, '0.0.0.0', () => {
 
 // WebSocket server para lista de jugadores
 server.on('upgrade', (request, socket, head) => {
+    console.log('WS upgrade request:', request.url);
     if (request.url.startsWith('/ws')) {
         wss.handleUpgrade(request, socket, head, (ws) => {
             wss.emit('connection', ws, request);
         });
+    } else {
+        socket.destroy();
     }
 });
 

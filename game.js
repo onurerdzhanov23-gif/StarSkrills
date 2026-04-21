@@ -71,7 +71,7 @@ console.log('game.js starting, THREE:', typeof THREE);
 // ============================================
 // 🎮 SISTEMA MULTIPLAYER (WebSocket) - Solo conectar cuando inicie el juego
 const isHttps = window.location.protocol === 'https:';
-const SERVER_URL = (isHttps ? 'wss://' : 'ws://') + window.location.host;
+const SERVER_URL = (isHttps ? 'wss://' : 'ws://') + window.location.host + '/ws';
 // Dynamically connected to where it is hosted
 let useLocal = false;
 let ws = null;
