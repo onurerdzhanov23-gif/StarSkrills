@@ -70,8 +70,9 @@ console.log('game.js starting, THREE:', typeof THREE);
 
 // ============================================
 // 🎮 SISTEMA MULTIPLAYER (WebSocket) - Solo conectar cuando inicie el juego
-const SERVER_URL = 'wss://starskrills-1.onrender.com';
-// Use remote by default, local for testing
+const isHttps = window.location.protocol === 'https:';
+const SERVER_URL = (isHttps ? 'wss://' : 'ws://') + window.location.host;
+// Dynamically connected to where it is hosted
 let useLocal = false;
 let ws = null;
 let isOnline = false;
