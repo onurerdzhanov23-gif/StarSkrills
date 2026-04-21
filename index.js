@@ -187,10 +187,11 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor en puerto ${PORT}`);
 });
 
-// WebSocket server para lista de jugadores
+// WebSocket server
 server.on('upgrade', (request, socket, head) => {
-    console.log('WS upgrade request:', request.url);
-    if (request.url.startsWith('/ws')) {
+    console.log('WS request:', request.url);
+    // Accept /ws or websocket connections
+    if (request.url && (request.url.startsWith('/ws') || request.url.includes('websocket'))) {
         wss.handleUpgrade(request, socket, head, (ws) => {
             wss.emit('connection', ws, request);
         });

@@ -14,6 +14,51 @@ function getMyName() {
     return name;
 }
 
+function connectWebSocket() {
+    return new Promise(function(resolve, reject) {
+        // Try multiple WebSocket URLs
+        var protocols = [
+            (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws',
+            (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/websocket',
+            (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host
+        ];
+        
+        var tryIndex = 0;
+        
+        function tryConnect() {
+            if (tryIndex >= protocols.length) {
+                reject(new Error('No se pudo conectar'));
+                return;
+            }
+            
+            var url = protocols[tryIndex];
+            console.log('Intentando WS:', url);
+            
+            try {
+                var testWs = new WebSocket(url);
+                testWs.onopen = function() {
+                    console.log('✅ Conectado a:', url);
+                    resolve({ ws: testWs, url: url });
+                };
+                testWs.onerror = function(e) {
+                    console.log('❌ Error con:', url);
+                    tryIndex++;
+                    tryConnect();
+                };
+                testWs.onclose = function() {
+                    tryIndex++;
+                    tryConnect();
+                };
+            } catch(e) {
+                tryIndex++;
+                tryConnect();
+            }
+        }
+        
+        tryConnect();
+    });
+}
+
 // Auto-connect on load
 window.addEventListener('load', function() {
     setTimeout(function() {
@@ -23,36 +68,51 @@ window.addEventListener('load', function() {
         var input = document.getElementById('username-input');
         if (input && myName) input.value = myName;
         
-        // Auto-connect to server
-        checkLocalServer();
-        var serverUrl = useLocal ? SERVER_URL : SERVER_URL;
+        // Show connecting status
+        var counter = document.getElementById('online-players');
+        if (counter) counter.innerHTML = '⚡ Conectando...';
         
-        try {
-            ws = new WebSocket(serverUrl);
-            ws.onopen = function() {
-                isOnline = true;
-                console.log('Conectado');
-                if (myName && myName.length >= 2) {
-                    ws.send(JSON.stringify({ type: 'register', name: myName }));
-                    setTimeout(function() { ws.send(JSON.stringify({ type: 'get-players' })); }, 500);
-                }
-            };
+        // Try to connect
+        connectWebSocket().then(function(result) {
+            ws = result.ws;
+            isOnline = true;
+            
+            if (counter) counter.innerHTML = '🟢 Conectado';
+            console.log('WS conectado');
+            
+            if (myName && myName.length >= 2) {
+                ws.send(JSON.stringify({ type: 'register', name: myName }));
+                setTimeout(function() { 
+                    ws.send(JSON.stringify({ type: 'get-players' })); 
+                }, 500);
+            }
+            
             ws.onmessage = function(e) {
                 try {
                     var msg = JSON.parse(e.data);
+                    console.log('Mensaje:', msg.type);
                     if (msg.type === 'players-list') {
                         showPlayersInModal(msg.players || [], myName, msg.playing || []);
                     }
                 } catch(err) {}
             };
+            
             ws.onclose = function() {
                 isOnline = false;
+                if (counter) counter.innerHTML = '🔴 Desconectado';
+                // Auto reconnect after 5 seconds
                 setTimeout(function() {
-                    checkLocalServer();
-                    ws = new WebSocket(useLocal ? SERVER_URL : SERVER_URL);
+                    connectWebSocket().then(function(r) {
+                        ws = r.ws;
+                        isOnline = true;
+                    });
                 }, 5000);
             };
-        } catch(e) {}
+            
+        }).catch(function(e) {
+            console.log('Error:', e);
+            if (counter) counter.innerHTML = '❌ Sin conexión';
+        });
     }, 1500);
 });
 
@@ -119,57 +179,37 @@ window.showPlayersList = function() {
     list.innerHTML = html;
     modal.style.display = 'flex';
     
-    checkLocalServer();
-    var serverUrl = useLocal ? SERVER_URL : SERVER_URL;
-    
+    // If already connected, just request players
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'register', name: myName }));
         setTimeout(function() { ws.send(JSON.stringify({ type: 'get-players' })); }, 300);
         return;
     }
     
-    try {
-        ws = new WebSocket(serverUrl);
-        ws.onopen = function() {
-            isOnline = true;
-            ws.send(JSON.stringify({ type: 'register', name: myName }));
-            setTimeout(function() {
-                ws.send(JSON.stringify({ type: 'get-players' }));
-            }, 700);
-        };
+    // Try to connect
+    connectWebSocket().then(function(result) {
+        ws = result.ws;
+        isOnline = true;
+        
+        ws.send(JSON.stringify({ type: 'register', name: myName }));
+        setTimeout(function() { ws.send(JSON.stringify({ type: 'get-players' })); }, 500);
+        
         ws.onmessage = function(e) {
             try {
                 var msg = JSON.parse(e.data);
                 if (msg.type === 'registered') {
                     myName = msg.name;
                     sessionStorage.setItem('myName', myName);
-                    sessionStorage.setItem('savedName', myName);
                 }
                 if (msg.type === 'players-list') {
-                    var allPlayers = msg.players || [];
-                    var playingPlayers = msg.playing || [];
-                    if (allPlayers.indexOf(myName) === -1) allPlayers.push(myName);
-                    showPlayersInModal(allPlayers, myName, playingPlayers);
-                    var counter = document.getElementById('online-players');
-                    if (counter) {
-                        var playing = playingPlayers.length;
-                        var total = allPlayers.length;
-                        counter.innerHTML = '🟢 ' + total + ' en línea (' + playing + ' jugando)';
-                    }
+                    showPlayersInModal(msg.players || [], myName, msg.playing || []);
                 }
             } catch(err) {}
         };
-        ws.onerror = function() {
-            list.innerHTML = '<li style="padding:10px;color:#e74c3c;">❌ Sin conexión</li>';
-        };
-        setTimeout(function() {
-            if (!isOnline) {
-                list.innerHTML = '<li style="padding:10px;color:#e74c3c;">❌ Sin conexión</li>';
-            }
-        }, 5000);
-    } catch(e) {
-        list.innerHTML = '<li style="padding:10px;color:#e74c3c;">❌ Error</li>';
-    }
+        
+    }).catch(function(e) {
+        list.innerHTML = '<li style="padding:10px;color:#e74c3c;">❌ Sin conexión</li>';
+    });
 };
 
 function saveUsername(name) {
