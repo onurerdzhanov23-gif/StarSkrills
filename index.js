@@ -1,153 +1,316 @@
-"use strict";
+// Unified Multiplayer Server v2.1 (Auto-Deployed)
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const path = require('path');
 
-// Some environments don't have global Buffer (e.g. React Native).
-// Solution would be installing npm modules "buffer" and "stream" explicitly.
-var Buffer = require("safer-buffer").Buffer;
+const app = express();
+app.use(cors());
 
-var bomHandling = require("./bom-handling"),
-    iconv = module.exports;
+// Disable cache
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Expires', '0');
+  next();
+});
 
-// All codecs and aliases are kept here, keyed by encoding name/alias.
-// They are lazy loaded in `iconv.getCodec` from `encodings/index.js`.
-iconv.encodings = null;
+// Serve static files properly without blocking the rest of the application
+app.use(express.static(__dirname, {
+  maxAge: 0,
+  etag: false,
+  fallthrough: true
+}));
 
-// Characters emitted in case of error.
-iconv.defaultCharUnicode = '�';
-iconv.defaultCharSingleByte = '?';
+// Route for the main game
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
-// Public API.
-iconv.encode = function encode(str, encoding, options) {
-    str = "" + (str || ""); // Ensure string.
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    },
+    pingTimeout: 60000,
+    pingInterval: 25000
+});
 
-    var encoder = iconv.getEncoder(encoding, options);
+const WebSocket = require('ws');
+const https = require('https');
+const fs = require('fs');
 
-    var res = encoder.write(str);
-    var trail = encoder.end();
-    
-    return (trail && trail.length > 0) ? Buffer.concat([res, trail]) : res;
+let registeredNames = [];
+const namesFile = path.join(__dirname, 'registered_names.json');
+if (fs.existsSync(namesFile)) {
+    try { registeredNames = JSON.parse(fs.readFileSync(namesFile, 'utf8')); } catch(e) {}
+}
+function saveNames() {
+    try { fs.writeFileSync(namesFile, JSON.stringify(registeredNames, null, 2)); } catch(e) {}
 }
 
-iconv.decode = function decode(buf, encoding, options) {
-    if (typeof buf === 'string') {
-        if (!iconv.skipDecodeWarning) {
-            console.error('Iconv-lite warning: decode()-ing strings is deprecated. Refer to https://github.com/ashtuchkin/iconv-lite/wiki/Use-Buffers-when-decoding');
-            iconv.skipDecodeWarning = true;
+// Game state
+const players = new Map();
+const rooms = new Map();
+const wsClients = new Map();
+const wss = new WebSocket.Server({ noServer: true });
+const MAX_PLAYERS_PER_ROOM = 10;
+
+console.log('🚀 Servidor Brawl Clone 3D iniciado');
+
+// Main page - Serve index.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Server stats
+app.get('/stats', (req, res) => {
+    res.json({
+        players: players.size,
+        rooms: rooms.size,
+        uptime: process.uptime()
+    });
+});
+
+// Socket.io connection
+io.on('connection', (socket) => {
+    console.log(`✅ Jugador conectado: ${socket.id}`);
+    
+    let currentRoom = null;
+    let playerData = null;
+
+    // Player joins a room
+    socket.on('join-room', (data) => {
+        const { roomId, playerName, characterColor, characterType } = data;
+        
+        if (currentRoom) leaveRoom(socket, currentRoom);
+
+        if (!rooms.has(roomId)) {
+            rooms.set(roomId, {
+                id: roomId,
+                players: new Map(),
+                gameState: { started: false, countdown: false }
+            });
+            console.log(`🏠 Sala creada: ${roomId}`);
         }
 
-        buf = Buffer.from("" + (buf || ""), "binary"); // Ensure buffer.
+        const room = rooms.get(roomId);
+
+        if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
+            socket.emit('room-full', { roomId });
+            return;
+        }
+
+        playerData = {
+            id: socket.id,
+            name: playerName || `Jugador ${players.size + 1}`,
+            color: characterColor || '#00FF88',
+            type: characterType || 'normal',
+            position: { x: 0, y: 0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            health: 100,
+            alive: true,
+            lastUpdate: Date.now()
+        };
+
+        room.players.set(socket.id, playerData);
+        currentRoom = roomId;
+        socket.join(roomId);
+
+        socket.emit('joined-room', {
+            roomId,
+            playerId: socket.id,
+            players: Array.from(room.players.values())
+        });
+
+        socket.to(roomId).emit('player-joined', playerData);
+        console.log(`${playerData.name} se unió a ${roomId}`);
+    });
+
+    socket.on('player-move', (data) => {
+        if (!currentRoom || !playerData) return;
+        const room = rooms.get(currentRoom);
+        if (!room) return;
+
+        const player = room.players.get(socket.id);
+        if (player) {
+            player.position = data.position || player.position;
+            player.rotation = data.rotation || player.rotation;
+            socket.to(currentRoom).emit('player-moved', {
+                id: socket.id,
+                position: player.position,
+                rotation: player.rotation
+            });
+        }
+    });
+
+    socket.on('player-attack', (data) => {
+        if (!currentRoom || !playerData) return;
+        socket.to(currentRoom).emit('player-attacked', {
+            id: socket.id,
+            attackData: data,
+            position: playerData.position
+        });
+    });
+
+    socket.on('chat-message', (data) => {
+        if (!currentRoom || !playerData) return;
+        io.to(currentRoom).emit('chat-message', {
+            id: socket.id,
+            name: playerData.name,
+            message: data.message.substring(0, 200),
+            time: Date.now()
+        });
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`❌ Jugador desconectado: ${socket.id}`);
+        if (currentRoom) leaveRoom(socket, currentRoom);
+    });
+
+    function leaveRoom(socket, roomId) {
+        const room = rooms.get(roomId);
+        if (room) {
+            room.players.delete(socket.id);
+            socket.leave(roomId);
+            socket.to(roomId).emit('player-left', { id: socket.id });
+            if (room.players.size === 0) rooms.delete(roomId);
+        }
+        currentRoom = null;
+        playerData = null;
     }
+});
 
-    var decoder = iconv.getDecoder(encoding, options);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor en puerto ${PORT}`);
+});
 
-    var res = decoder.write(buf);
-    var trail = decoder.end();
-
-    return trail ? (res + trail) : res;
-}
-
-iconv.encodingExists = function encodingExists(enc) {
-    try {
-        iconv.getCodec(enc);
-        return true;
-    } catch (e) {
-        return false;
+// WebSocket server
+server.on('upgrade', (request, socket, head) => {
+    console.log('WS request:', request.url);
+    // Accept /ws or websocket connections
+    if (request.url && (request.url.startsWith('/ws') || request.url.includes('websocket'))) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+        });
+    } else {
+        socket.destroy();
     }
-}
+});
 
-// Legacy aliases to convert functions
-iconv.toEncoding = iconv.encode;
-iconv.fromEncoding = iconv.decode;
-
-// Search for a codec in iconv.encodings. Cache codec data in iconv._codecDataCache.
-iconv._codecDataCache = {};
-iconv.getCodec = function getCodec(encoding) {
-    if (!iconv.encodings)
-        iconv.encodings = require("../encodings"); // Lazy load all encoding definitions.
+wss.on('connection', (ws, req) => {
+    const id = 'user_' + Date.now() + Math.random().toString(36).substr(2, 5);
+    wsClients.set(id, ws);
+    console.log(`🔌 WS cliente: ${id}`);
     
-    // Canonicalize encoding name: strip all non-alphanumeric chars and appended year.
-    var enc = iconv._canonicalizeEncoding(encoding);
-
-    // Traverse iconv.encodings to find actual codec.
-    var codecOptions = {};
-    while (true) {
-        var codec = iconv._codecDataCache[enc];
-        if (codec)
-            return codec;
-
-        var codecDef = iconv.encodings[enc];
-
-        switch (typeof codecDef) {
-            case "string": // Direct alias to other encoding.
-                enc = codecDef;
-                break;
-
-            case "object": // Alias with options. Can be layered.
-                for (var key in codecDef)
-                    codecOptions[key] = codecDef[key];
-
-                if (!codecOptions.encodingName)
-                    codecOptions.encodingName = enc;
+    ws.send(JSON.stringify({ type: 'welcome', id }));
+    
+    ws.on('message', (data) => {
+        try {
+            const msg = JSON.parse(data);
+            
+            if (msg.type === 'register') {
+                let name = msg.name || 'Anon';
+                name = name.replace(/[^a-zA-Z0-9_ñÑ]/g, '');
+                let finalName = name;
+                let counter = 0;
+                while (registeredNames.includes(finalName)) {
+                    counter++;
+                    finalName = name + counter;
+                }
+                if (!registeredNames.includes(finalName)) {
+                    registeredNames.push(finalName);
+                    saveNames();
+                }
+                ws.playerName = finalName;
+                ws.playerState = 'menu';
+                ws.send(JSON.stringify({ type: 'registered', name: finalName }));
                 
-                enc = codecDef.type;
-                break;
-
-            case "function": // Codec itself.
-                if (!codecOptions.encodingName)
-                    codecOptions.encodingName = enc;
-
-                // The codec function must load all tables and return object with .encoder and .decoder methods.
-                // It'll be called only once (for each different options object).
-                codec = new codecDef(codecOptions, iconv);
-
-                iconv._codecDataCache[codecOptions.encodingName] = codec; // Save it to be reused later.
-                return codec;
-
-            default:
-                throw new Error("Encoding not recognized: '" + encoding + "' (searched as: '"+enc+"')");
-        }
+                // Send player list after registration
+                const connectedPlayers = [];
+                const playingPlayers = [];
+                wsClients.forEach((w) => {
+                    if (w.readyState === WebSocket.OPEN && w.playerName) {
+                        connectedPlayers.push(w.playerName);
+                        if (w.playerState === 'playing') {
+                            playingPlayers.push(w.playerName);
+                        }
+                    }
+                });
+                ws.send(JSON.stringify({ 
+                    type: 'players-list', 
+                    players: connectedPlayers,
+                    playing: playingPlayers 
+                }));
+            }
+            
+            if (msg.type === 'game-start') {
+                ws.playerState = 'playing';
+                updateActivePlayers();
+            }
+            
+            if (msg.type === 'game-end') {
+                ws.playerState = 'menu';
+                updateActivePlayers();
+            }
+            
+            if (msg.type === 'get-active') {
+                updateActivePlayers();
+            }
+            
+            if (msg.type === 'spectate') {
+                const targetName = msg.target;
+                let targetPos = null;
+                wsClients.forEach((w) => {
+                    if (w.playerName === targetName && w.playerState === 'playing') {
+                        targetPos = w.playerPosition;
+                    }
+                });
+                ws.send(JSON.stringify({ type: 'spectate-ok', target: targetName, position: targetPos }));
+            }
+            
+            if (msg.type === 'position-update') {
+                ws.playerPosition = msg.position;
+            }
+            
+            if (msg.type === 'get-players') {
+                const connectedPlayers = [];
+                const playingPlayers = [];
+                wsClients.forEach((w, id) => {
+                    if (w.readyState === WebSocket.OPEN && w.playerName) {
+                        connectedPlayers.push(w.playerName);
+                        if (w.playerState === 'playing') {
+                            playingPlayers.push(w.playerName);
+                        }
+                    }
+                });
+                ws.send(JSON.stringify({ 
+                    type: 'players-list', 
+                    players: connectedPlayers,
+                    playing: playingPlayers 
+                }));
+            }
+            
+            if (msg.type === 'move') {
+                ws.send(JSON.stringify({ type: 'moved', id, x: msg.x, y: msg.y }));
+            }
+        } catch(e) {}
+    });
+    
+    ws.on('close', () => {
+        wsClients.delete(id);
+        console.log(`❌ WS desconectado: ${id}`);
+    });
+    
+    function updateActivePlayers() {
+        const activePlayers = [];
+        wsClients.forEach((w) => {
+            if (w.readyState === WebSocket.OPEN && w.playerName && w.playerState === 'playing') {
+                activePlayers.push({ name: w.playerName, position: w.playerPosition });
+            }
+        });
+        ws.send(JSON.stringify({ type: 'active-players', players: activePlayers }));
     }
-}
-
-iconv._canonicalizeEncoding = function(encoding) {
-    // Canonicalize encoding name: strip all non-alphanumeric chars and appended year.
-    return (''+encoding).toLowerCase().replace(/:\d{4}$|[^0-9a-z]/g, "");
-}
-
-iconv.getEncoder = function getEncoder(encoding, options) {
-    var codec = iconv.getCodec(encoding),
-        encoder = new codec.encoder(options, codec);
-
-    if (codec.bomAware && options && options.addBOM)
-        encoder = new bomHandling.PrependBOM(encoder, options);
-
-    return encoder;
-}
-
-iconv.getDecoder = function getDecoder(encoding, options) {
-    var codec = iconv.getCodec(encoding),
-        decoder = new codec.decoder(options, codec);
-
-    if (codec.bomAware && !(options && options.stripBOM === false))
-        decoder = new bomHandling.StripBOM(decoder, options);
-
-    return decoder;
-}
-
-
-// Load extensions in Node. All of them are omitted in Browserify build via 'browser' field in package.json.
-var nodeVer = typeof process !== 'undefined' && process.versions && process.versions.node;
-if (nodeVer) {
-
-    // Load streaming support in Node v0.10+
-    var nodeVerArr = nodeVer.split(".").map(Number);
-    if (nodeVerArr[0] > 0 || nodeVerArr[1] >= 10) {
-        require("./streams")(iconv);
-    }
-
-    // Load Node primitive extensions.
-    require("./extend-node")(iconv);
-}
-
-if ("Ā" != "\u0100") {
-    console.error("iconv-lite warning: javascript files use encoding different from utf-8. See https://github.com/ashtuchkin/iconv-lite/wiki/Javascript-source-file-encodings for more info.");
-}
+});
